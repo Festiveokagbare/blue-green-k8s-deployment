@@ -126,13 +126,15 @@ jobs:
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
         run: |
-          echo "${KUBE_CONFIG_DATA}" | base64 --decode > kubeconfig
-          export KUBECONFIG=$PWD/kubeconfig
+          echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/kubeconfig
+          echo "KUBECONFIG=$HOME/kubeconfig" >> $GITHUB_ENV
 
       - name: Debug kubeconfig
         run: |
-          echo "KUBECONFIG file created successfully"
-          ls -l kubeconfig
+          echo "===== KUBECONFIG ====="
+          echo $KUBECONFIG
+          echo "===== CONTENTS ====="
+          cat $KUBECONFIG
 
       - name: Verify K8s connectivity
         run: |
