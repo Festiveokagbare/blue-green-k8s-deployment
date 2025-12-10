@@ -115,7 +115,6 @@ jobs:
       BLUE_LABEL: blue
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -127,26 +126,139 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       # --------------------------
-      # CONFIGURE K8S
+      # INSTALL AND CONFIGURE TOOLS
       # --------------------------
-      - name: Configure kubeconfig
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Update AWS CLI (if needed)
+        run: |
+          pip install --upgrade awscli
+
+      # --------------------------
+      # EXTRACT CLUSTER INFO FROM EXISTING KUBECONFIG
+      # --------------------------
+      - name: Decode and analyze kubeconfig
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
         run: |
-          echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/kubeconfig
+          echo "$KUBE_CONFIG_DATA" | base64 --decode > /tmp/kubeconfig.yaml
+
+          # Extract cluster name from kubeconfig
+          # Method 1: Try to get cluster name from contexts
+          CLUSTER_NAME=$(grep -A2 "contexts:" /tmp/kubeconfig.yaml | grep "cluster:" | head -1 | awk '{print $2}' | tr -d '\r' || true)
+
+          # Method 2: Try to get cluster name from clusters section
+          if [ -z "$CLUSTER_NAME" ]; then
+            CLUSTER_NAME=$(grep "name:" /tmp/kubeconfig.yaml | grep -i "cluster" | head -1 | awk '{print $2}' | tr -d '\r' || true)
+          fi
+
+          # Method 3: Try to extract from server URL (EKS endpoint)
+          if [ -z "$CLUSTER_NAME" ]; then
+            SERVER_URL=$(grep "server:" /tmp/kubeconfig.yaml | head -1 | awk '{print $2}' | tr -d '\r' || true)
+            if [[ $SERVER_URL == *"eks.amazonaws.com"* ]]; then
+              CLUSTER_NAME=$(echo $SERVER_URL | sed -n 's|.*//\(.*\)\.gr7\.\(.*\)\.eks\.amazonaws\.com.*|\1|p' || true)
+            fi
+          fi
+
+          # If still empty, use a default or ask user to set it
+          if [ -z "$CLUSTER_NAME" ]; then
+            echo "WARNING: Could not extract cluster name from kubeconfig"
+            echo "Please set EKS_CLUSTER_NAME as a repository secret"
+            echo "Using placeholder - YOU MUST SET EKS_CLUSTER_NAME SECRET"
+            CLUSTER_NAME="YOUR_EKS_CLUSTER_NAME"
+          fi
+
+          echo "Extracted cluster name: $CLUSTER_NAME"
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
+
+          # Save original kubeconfig for reference
+          cp /tmp/kubeconfig.yaml /tmp/original-kubeconfig.yaml
+
+      # --------------------------
+      # GENERATE PROPER KUBECONFIG FOR EKS
+      # --------------------------
+      - name: Generate EKS kubeconfig
+        run: |
+          # Check if CLUSTER_NAME is set, otherwise use secret
+          if [ "$CLUSTER_NAME" = "YOUR_EKS_CLUSTER_NAME" ] && [ -n "${{ secrets.EKS_CLUSTER_NAME }}" ]; then
+            echo "Using cluster name from secret"
+            CLUSTER_NAME="${{ secrets.EKS_CLUSTER_NAME }}"
+            echo "CLUSTER_NAME=$CLUSTER_NAME" >> $GITHUB_ENV
+          fi
+
+          # Verify AWS credentials
+          echo "Verifying AWS credentials..."
+          aws sts get-caller-identity
+
+          # Verify EKS cluster access
+          echo "Checking EKS cluster..."
+          aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION || {
+            echo "ERROR: Cannot access EKS cluster '$CLUSTER_NAME' in region '$AWS_REGION'"
+            echo "Please verify:"
+            echo "1. Cluster name is correct"
+            echo "2. AWS credentials have proper permissions"
+            echo "3. Cluster exists in region $AWS_REGION"
+            exit 1
+          }
+
+          # Generate kubeconfig
+          echo "Generating kubeconfig for EKS cluster: $CLUSTER_NAME"
+          aws eks update-kubeconfig \
+            --name $CLUSTER_NAME \
+            --region $AWS_REGION \
+            --kubeconfig $HOME/kubeconfig
+
+          # Set KUBECONFIG environment variable
           echo "KUBECONFIG=$HOME/kubeconfig" >> $GITHUB_ENV
 
-      - name: Debug kubeconfig
-        run: |
-          echo "===== KUBECONFIG ====="
-          echo $KUBECONFIG
-          echo "===== CONTENTS ====="
-          cat $KUBECONFIG
+          # Verify the generated kubeconfig
+          echo "Generated kubeconfig contents:"
+          kubectl config view --kubeconfig=$HOME/kubeconfig
 
-      - name: Verify K8s connectivity
+      # --------------------------
+      # VERIFY KUBERNETES ACCESS
+      # --------------------------
+      - name: Verify Kubernetes connectivity
         run: |
+          echo "Testing kubectl connection..."
+
+          # Test basic commands with retry
+          for i in {1..5}; do
+            echo "Attempt $i to connect to Kubernetes..."
+            if kubectl cluster-info; then
+              echo "✓ Successfully connected to Kubernetes"
+              break
+            else
+              echo "✗ Connection failed, retrying in 5 seconds..."
+              sleep 5
+            fi
+          done
+
+          # Get nodes and namespaces
+          echo "Listing nodes:"
           kubectl get nodes
+
+          echo "Listing namespaces:"
           kubectl get ns
+
+          echo "Current context:"
+          kubectl config current-context
+
+      # --------------------------
+      # OPTIONAL: COMPARE WITH ORIGINAL CONFIG
+      # --------------------------
+      - name: Debug - Compare kubeconfigs
+        if: ${{ false }}  # Set to true if you want to debug
+        run: |
+          echo "===== ORIGINAL KUBECONFIG ====="
+          cat /tmp/original-kubeconfig.yaml || true
+          echo ""
+          echo "===== GENERATED KUBECONFIG ====="
+          cat $HOME/kubeconfig || true
 
       - name: Ensure namespace exists
         run: |
