@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: app-config
 data:
-  APP_NAME: "blue-green-demo"
+  APP_NAME: "blue-green-app"
   ENV: "production"
