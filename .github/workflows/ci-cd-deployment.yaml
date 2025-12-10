@@ -81,7 +81,7 @@ jobs:
             ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:latest
 
       - name: Trivy Scan (BLUE image)
-        uses: aquasecurity/trivy-action@v1
+        uses: aquasecurity/trivy-action@v2
         with:
           image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
           format: table
