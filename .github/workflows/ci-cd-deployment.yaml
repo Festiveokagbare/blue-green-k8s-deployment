@@ -124,12 +124,12 @@ jobs:
       # --------------------------
       - name: Configure kubeconfig
         run: |
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > kubeconfig
+          echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig
           export KUBECONFIG=$(pwd)/kubeconfig
-          kubectl config viewg
 
       - name: Verify K8s connectivity
         run: |
+          kubectl config view      # <- make sure this is 'view', not 'viewg'
           kubectl get nodes
           kubectl get ns
 
