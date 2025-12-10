@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:prod
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:latest
 
       - name: Build & Push GREEN image
         id: push-green
@@ -80,7 +80,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:prod
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:latest
 
       - name: Trivy Scan (BLUE image)
         uses: aquasecurity/trivy-action@master
