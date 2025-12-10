@@ -83,7 +83,7 @@ jobs:
             ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:prod
 
       - name: Trivy Scan (BLUE image)
-        uses: aquasecurity/trivy-action@v0.15.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:${{ github.sha }}
           format: table
@@ -91,7 +91,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Trivy Scan (GREEN image)
-        uses: aquasecurity/trivy-action@v0.15.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:${{ github.sha }}
           format: table
