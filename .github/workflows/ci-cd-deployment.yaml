@@ -68,8 +68,8 @@ jobs:
           file: ./app/blue/Dockerfile
           push: true
           tags: |
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:latest
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:${{ github.sha }}
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:prod
 
       - name: Build & Push GREEN image
         id: push-green
@@ -79,8 +79,8 @@ jobs:
           file: ./app/green/Dockerfile
           push: true
           tags: |
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
-            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:latest
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:${{ github.sha }}
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:prod
 
       - name: Trivy Scan (BLUE image)
         uses: aquasecurity/trivy-action@master
