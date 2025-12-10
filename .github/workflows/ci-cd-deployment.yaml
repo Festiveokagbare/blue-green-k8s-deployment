@@ -81,7 +81,7 @@ jobs:
             ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:latest
 
       - name: Trivy Scan (BLUE image)
-        uses: aquasecurity/trivy-action@v2
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
           format: table
@@ -89,7 +89,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Trivy Scan (GREEN image)
-        uses: aquasecurity/trivy-action@v2
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
           format: table
