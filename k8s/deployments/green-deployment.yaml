@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-green
+  labels:
+    app: blue-green-app
+    version: green
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: blue-green-app
+      version: green
+  template:
+    metadata:
+      labels:
+        app: blue-green-app
+        version: green
+    spec:
+      containers:
+      - name: flask-app
+        image: 516175389215.dkr.ecr.us-east-1.amazonaws.com/green-app:prod
+        ports:
+        - containerPort: 5000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 15
+          periodSeconds: 10

@@ -1,0 +1,226 @@
+name: CI/CD Blue-Green Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/*'
+  workflow_dispatch:
+
+env:
+  APP_NAME: blue-green-app
+  NAMESPACE: default
+  GREEN_LABEL: green
+  BLUE_LABEL: blue
+
+jobs:
+
+  # ========================================================================
+  # BUILD AND SCAN (unchanged from your version)
+  # ========================================================================
+  build-and-scan:
+    runs-on: ubuntu-latest
+    outputs:
+      blue_image: ${{ steps.push-blue.outputs.image }}
+      green_image: ${{ steps.push-green.outputs.image }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Bandit & deps
+        run: |
+          pip install --upgrade pip
+          pip install bandit
+          if [ -f app/blue/requirements.txt ]; then pip install -r app/blue/requirements.txt; fi
+          if [ -f app/green/requirements.txt ]; then pip install -r app/green/requirements.txt; fi
+
+      - name: Run Bandit Scan
+        run: |
+          bandit -r app/blue -ll || true
+          bandit -r app/green -ll || true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to AWS ECR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build & Push BLUE image
+        id: push-blue
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/blue
+          file: ./app/blue/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:latest
+
+      - name: Build & Push GREEN image
+        id: push-green
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/green
+          file: ./app/green/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
+            ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:latest
+
+      - name: Trivy Scan (BLUE image)
+        uses: aquasecurity/trivy-action@v1
+        with:
+          image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Trivy Scan (GREEN image)
+        uses: aquasecurity/trivy-action@v1
+        with:
+          image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+
+  # ========================================================================
+  # DEPLOY, VERIFY, FLIP, AUTO-ROLLBACK
+  # ========================================================================
+  deploy-and-release:
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --------------------------
+      # CONFIGURE K8S
+      # --------------------------
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        run: |
+          echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig
+          export KUBECONFIG=$(pwd)/kubeconfig
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl get ns ${{ env.NAMESPACE }} || kubectl create ns ${{ env.NAMESPACE }}
+
+      # --------------------------
+      # DEPLOY GREEN
+      # --------------------------
+      - name: Deploy GREEN version
+        env:
+          GREEN_IMAGE: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
+        run: |
+          sed -e "s|<GREEN_IMAGE>|${GREEN_IMAGE}|g" \
+            k8s/deployments/green-deployment.yaml | kubectl apply -f -
+
+      - name: Wait for GREEN rollout
+        id: rollout
+        run: |
+          kubectl rollout status deployment/app-green \
+            --namespace=${{ env.NAMESPACE }} \
+            --timeout=180s
+
+      # --------------------------
+      # SMOKE TEST GREEN
+      # --------------------------
+      - name: Smoke test GREEN pod
+        id: smoketest
+        run: |
+          set -e
+          for i in {1..12}; do
+            POD=$(kubectl get pods -n ${{ env.NAMESPACE }} \
+              -l app=${{ env.APP_NAME }},version=${{ env.GREEN_LABEL }} \
+              -o jsonpath="{.items[0].metadata.name}" || true)
+
+            if [ -n "$POD" ]; then
+              kubectl exec -n ${{ env.NAMESPACE }} $POD \
+                -- curl -sSf http://localhost:5000/health && break
+            fi
+
+            echo "Waiting for GREEN pod readiness..."
+            sleep 10
+          done
+
+      # --------------------------
+      # FLIP SERVICE TO GREEN
+      # --------------------------
+      - name: Flip service to GREEN
+        id: flip
+        run: |
+          kubectl -n ${{ env.NAMESPACE }} patch service app-service \
+            -p '{"spec":{"selector":{"app":"blue-green-app","version":"green"}}}'
+
+      # --------------------------
+      # VERIFY GREEN SERVICE
+      # --------------------------
+      - name: Verify GREEN service
+        id: verify
+        run: |
+          set -e
+          for i in {1..10}; do
+            kubectl get svc app-service -n ${{ env.NAMESPACE }}
+            echo "Waiting for GREEN service response..."
+            sleep 6
+
+            POD=$(kubectl get pods -n ${{ env.NAMESPACE }} \
+              -l app=${{ env.APP_NAME }},version=${{ env.GREEN_LABEL }} \
+              -o jsonpath="{.items[0].metadata.name}" || true)
+
+            if [ -n "$POD" ]; then
+              kubectl exec -n ${{ env.NAMESPACE }} $POD \
+                -- curl -sSf http://localhost:5000/health && exit 0
+            fi
+          done
+
+          echo "GREEN service failed probe"
+          exit 1
+
+
+      # =====================================================================
+      # AUTO-ROLLBACK if any step above failed
+      # =====================================================================
+      - name: AUTO-ROLLBACK to BLUE
+        if: failure()
+        run: |
+          echo "⚠️ GREEN deployment failed — starting rollback..."
+
+          echo "➡ Switching service back to BLUE"
+          kubectl -n ${{ env.NAMESPACE }} patch service app-service \
+            -p '{"spec":{"selector":{"app":"blue-green-app","version":"blue"}}}'
+
+          echo "➡ Scaling GREEN to zero"
+          kubectl scale deployment app-green --replicas=0 -n ${{ env.NAMESPACE }} || true
+
+          echo "Rollback completed ❗ Deployment remains on BLUE"
+          exit 1  # Mark workflow as failed so you know deployment failed
+
+
+      # --------------------------
+      # SCALE DOWN OLD BLUE
+      # --------------------------
+      - name: Scale down BLUE deployment
+        if: success()
+        run: |
+          kubectl scale deployment app-blue --replicas=0 -n ${{ env.NAMESPACE }} || true
+

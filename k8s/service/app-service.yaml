@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app: blue-green-app
+    version: blue   # Start with blue; toggle to green during deployment
+  ports:
+    - protocol: TCP
+      port: 80      # Public port
+      targetPort: 5000  # Flask app container port
