@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:latest
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:prod
 
       - name: Build & Push GREEN image
         id: push-green
@@ -80,24 +80,23 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:${{ github.sha }}
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:latest
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:prod
 
       - name: Trivy Scan (BLUE image)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.15.0
         with:
-          image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/blue-app:${{ github.sha }}
+          image-ref: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_BLUE }}:${{ github.sha }}
           format: table
           exit-code: '1'
-          severity: 'CRITICAL,HIGH'
+          severity: CRITICAL,HIGH
 
       - name: Trivy Scan (GREEN image)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.15.0
         with:
-          image-ref: ${{ secrets.REGISTRY }}/${{ secrets.IMAGE_NAMESPACE }}/green-app:${{ github.sha }}
+          image-ref: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY_GREEN }}:${{ github.sha }}
           format: table
           exit-code: '1'
-          severity: 'CRITICAL,HIGH'
-
+          severity: CRITICAL,HIGH
 
   # ========================================================================
   # DEPLOY, VERIFY, FLIP, AUTO-ROLLBACK
