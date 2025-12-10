@@ -105,6 +105,14 @@ jobs:
     needs: build-and-scan
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    env:  
+    AWS_REGION: ${{ secrets.AWS_REGION }}
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    NAMESPACE: default
+    APP_NAME: blue-green-app
+    GREEN_LABEL: green
+    BLUE_LABEL: blue
 
     steps:
 
@@ -115,11 +123,15 @@ jobs:
       # CONFIGURE K8S
       # --------------------------
       - name: Configure kubeconfig
-        env:
-          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
         run: |
-          echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > kubeconfig
           export KUBECONFIG=$(pwd)/kubeconfig
+          kubectl config viewg
+
+      - name: Verify K8s connectivity
+        run: |
+          kubectl get nodes
+          kubectl get ns
 
       - name: Ensure namespace exists
         run: |
