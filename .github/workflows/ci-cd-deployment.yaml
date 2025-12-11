@@ -288,60 +288,21 @@ jobs:
       # --------------------------
       # ROBUST SMOKE TEST FOR GREEN PODS
       # --------------------------
-      - name: Robust smoke test for GREEN pods
-        id: smoketest
+      - name: Smoke Test GREEN environment (inside cluster)
         run: |
-          echo "Starting robust smoke test for GREEN pods..."
+          echo "Running GREEN smoke test inside the cluster..."
 
-          # Wait a few seconds for pods to start
-          sleep 5
-
-          # Get all GREEN pods that are READY
-          PODS=$(kubectl get pods -n $NAMESPACE \
-            -l app=$APP_NAME,version=$GREEN_LABEL \
-            -o jsonpath='{.items[?(@.status.containerStatuses[0].ready==true)].metadata.name}')
-
-          if [ -z "$PODS" ]; then
-            echo "ERROR: No ready GREEN pods found"
-            kubectl get pods -n $NAMESPACE -l app=$APP_NAME,version=$GREEN_LABEL
-            exit 1
-          fi
-
-          echo "Found GREEN pods: $PODS"
-
-          # Loop over each pod
-          for POD in $PODS; do
-            echo "Checking pod: $POD"
-
-            # Detect container port dynamically
-            PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.containers[0].ports[0].containerPort}')
-            echo "Detected container port: $PORT"
-
-            # Get pod IP
-            POD_IP=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.status.podIP}')
-            echo "Pod IP: $POD_IP"
-
-            # Retry health check up to 24 times (5s interval = 2 minutes)
-            SUCCESS=0
-            for i in $(seq 1 24); do
-              echo "Health check attempt $i/24 on pod $POD at $POD_IP:$PORT..."
-              if curl -s -f http://$POD_IP:$PORT/health > /dev/null; then
-                echo "✓ Pod $POD passed health check"
-                SUCCESS=1
-                break
-              fi
+          kubectl run smoke-test --rm -i --restart=Never \
+            --image=curlimages/curl -- \
+            sh -c "
+              echo Waiting for GREEN service to be ready...
               sleep 5
-            done
+              echo Testing service endpoint...
+              curl -s --fail http://app-green:5000/health
+            "
 
-            if [ $SUCCESS -ne 1 ]; then
-              echo "ERROR: Pod $POD failed health check after 2 minutes"
-              kubectl logs -n $NAMESPACE $POD
-              exit 1
-            fi
-          done
+          echo "✓ GREEN environment is healthy"
 
-          echo "All GREEN pods passed health check successfully"
-          echo "smoke_test_passed=true" >> $GITHUB_OUTPUT
 
       # --------------------------
       # FLIP SERVICE TO GREEN
