@@ -192,7 +192,7 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
           echo "✓ Cluster connection successful"
-          
+
       # --------------------------
       # PREPARE NAMESPACE AND CHECK EXISTING DEPLOYMENTS
       # --------------------------
@@ -253,7 +253,7 @@ jobs:
           # Create service if it doesn't exist
           if ! kubectl get service app-service -n $NAMESPACE &>/dev/null; then
             echo "Creating service pointing to BLUE..."
-            kubectl apply -f k8s/service.yaml -n $NAMESPACE
+            kubectl apply -f k8s/service/app-service.yaml -n $NAMESPACE
             sleep 5
           fi
 

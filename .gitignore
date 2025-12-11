@@ -5,3 +5,4 @@ infra/.terraform/
 *.tfvars
 *.log
 .terraform.lock.hcl
+aws-auth.yaml
