@@ -144,24 +144,33 @@ jobs:
 
       - name: Generate kubeconfig for EKS
         run: |
-          # Generate kubeconfig for bg-eks cluster
+          echo "Generating kubeconfig for cluster: $CLUSTER_NAME in region: $AWS_REGION"
+
+          # Generate kubeconfig
           aws eks update-kubeconfig \
             --name "$CLUSTER_NAME" \
             --region "$AWS_REGION" \
             --kubeconfig "$HOME/kubeconfig"
 
+          # Export kubeconfig path
           echo "KUBECONFIG=$HOME/kubeconfig" >> $GITHUB_ENV
 
-          # Verify kubeconfig
-          echo "=== Kubeconfig created ==="
-          kubectl config current-context
+          echo "Kubeconfig generated. Setting current context..."
 
-      - name: Verify cluster connection
-        run: |
-          echo "Testing connection to cluster..."
-          kubectl cluster-info
-          kubectl get nodes
-          echo "✓ Cluster connection successful"
+          # Set the current context manually (important!)
+          CONTEXT_NAME=$(kubectl config get-contexts -o name --kubeconfig=$HOME/kubeconfig)
+          kubectl config use-context "$CONTEXT_NAME" --kubeconfig=$HOME/kubeconfig
+
+          # Verify kubeconfig
+          echo "=== Kubeconfig created and context set ==="
+          kubectl config current-context --kubeconfig=$HOME/kubeconfig
+
+            - name: Verify cluster connection
+              run: |
+                echo "Testing connection to cluster..."
+                kubectl cluster-info
+                kubectl get nodes
+                echo "✓ Cluster connection successful"
 
       # --------------------------
       # PREPARE NAMESPACE AND CHECK EXISTING DEPLOYMENTS
@@ -478,4 +487,3 @@ jobs:
           }
 
           echo "✅ Final verification passed!"
-
