@@ -293,50 +293,55 @@ jobs:
         run: |
           echo "Starting robust smoke test for GREEN pods..."
 
-          # Wait a few seconds for pods to initialize
-          sleep 10
+          # Wait a few seconds for pods to start
+          sleep 5
 
-          # Get all running GREEN pods
+          # Get all GREEN pods that are READY
           PODS=$(kubectl get pods -n $NAMESPACE \
             -l app=$APP_NAME,version=$GREEN_LABEL \
-            --field-selector=status.phase=Running \
-            -o jsonpath="{.items[*].metadata.name}")
+            -o jsonpath='{.items[?(@.status.containerStatuses[0].ready==true)].metadata.name}')
 
           if [ -z "$PODS" ]; then
-            echo "ERROR: No running GREEN pods found"
+            echo "ERROR: No ready GREEN pods found"
             kubectl get pods -n $NAMESPACE -l app=$APP_NAME,version=$GREEN_LABEL
             exit 1
           fi
 
           echo "Found GREEN pods: $PODS"
 
-          # Loop through each pod
+          # Loop over each pod
           for POD in $PODS; do
             echo "Checking pod: $POD"
 
-            # Get container port dynamically (assumes single container per pod)
-            PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+            # Detect container port dynamically
+            PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.containers[0].ports[0].containerPort}')
             echo "Detected container port: $PORT"
 
-            # Retry health check up to 24 times with 5s interval (total 2 minutes)
-            for i in $(seq 1 24); do
-              echo "Health check attempt $i/24 on port $PORT..."
-              if kubectl exec -n $NAMESPACE $POD -- sh -c "curl -sSf http://localhost:${PORT}/health" >/dev/null 2>&1; then
-                echo "✓ Pod $POD passed health check"
-                break
-              fi
+            # Get pod IP
+            POD_IP=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.status.podIP}')
+            echo "Pod IP: $POD_IP"
 
-              if [ "$i" -eq 24 ]; then
-                echo "ERROR: Pod $POD failed health check after 2 minutes"
-                kubectl logs -n $NAMESPACE $POD
-                exit 1
+            # Retry health check up to 24 times (5s interval = 2 minutes)
+            SUCCESS=0
+            for i in $(seq 1 24); do
+              echo "Health check attempt $i/24 on pod $POD at $POD_IP:$PORT..."
+              if curl -s -f http://$POD_IP:$PORT/health > /dev/null; then
+                echo "✓ Pod $POD passed health check"
+                SUCCESS=1
+                break
               fi
               sleep 5
             done
+
+            if [ $SUCCESS -ne 1 ]; then
+              echo "ERROR: Pod $POD failed health check after 2 minutes"
+              kubectl logs -n $NAMESPACE $POD
+              exit 1
+            fi
           done
 
-          echo "✓ All GREEN pods passed health check"
-
+          echo "All GREEN pods passed health check successfully"
+          echo "smoke_test_passed=true" >> $GITHUB_OUTPUT
 
       # --------------------------
       # FLIP SERVICE TO GREEN
