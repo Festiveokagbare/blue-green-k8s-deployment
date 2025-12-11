@@ -135,16 +135,23 @@ jobs:
           kubectl version --client
 
       # Install AWS EKS IAM Authenticator
-      - name: Install AWS EKS IAM Authenticator
+      - name: Install AWS CLI + EKS IAM Authenticator
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y awscli
+          echo "Installing AWS CLI v2..."
 
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --update
+
+          aws --version
+
+          echo "Installing aws-iam-authenticator..."
           curl -o aws-iam-authenticator \
             https://amazon-eks.s3.us-west-2.amazonaws.com/1.27.1/2023-04-19/bin/linux/amd64/aws-iam-authenticator
 
           chmod +x aws-iam-authenticator
           sudo mv aws-iam-authenticator /usr/local/bin/
+
           aws-iam-authenticator version
 
       # --------------------------
