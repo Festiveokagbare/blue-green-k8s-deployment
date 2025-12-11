@@ -286,50 +286,57 @@ jobs:
           echo "rollout_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       # --------------------------
-      # SMOKE TEST GREEN (dynamic port)
+      # ROBUST SMOKE TEST FOR GREEN PODS
       # --------------------------
-      - name: Smoke test GREEN pod
+      - name: Robust smoke test for GREEN pods
         id: smoketest
         run: |
           echo "Starting robust smoke test for GREEN pods..."
 
-          # Wait for at least one pod to be Ready
-          POD=""
-          for i in {1..24}; do  # check every 5s, up to 2 min
-            POD=$(kubectl get pods -n $NAMESPACE \
-              -l app=$APP_NAME,version=$GREEN_LABEL \
-              -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || true)
-            READY=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
-            if [ "$READY" == "true" ]; then
-              echo "GREEN pod $POD is Ready"
-              break
-            fi
-            echo "Waiting for GREEN pod to be Ready... ($i/24)"
-            sleep 5
-          done
+          # Wait a few seconds for pods to initialize
+          sleep 10
 
-          if [ -z "$POD" ]; then
-            echo "ERROR: No GREEN pod found"
+          # Get all running GREEN pods
+          PODS=$(kubectl get pods -n $NAMESPACE \
+            -l app=$APP_NAME,version=$GREEN_LABEL \
+            --field-selector=status.phase=Running \
+            -o jsonpath="{.items[*].metadata.name}")
+
+          if [ -z "$PODS" ]; then
+            echo "ERROR: No running GREEN pods found"
             kubectl get pods -n $NAMESPACE -l app=$APP_NAME,version=$GREEN_LABEL
             exit 1
           fi
 
-          # Dynamically detect container port
-          PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo "5000")
-          echo "Detected container port: $PORT"
+          echo "Found GREEN pods: $PODS"
 
-          # Retry health check until success
-          for i in {1..24}; do  # retry every 5s, up to 2 min
-            echo "Health check attempt $i/24 on port $PORT..."
-            if kubectl exec -n $NAMESPACE $POD -- sh -c "wget -qO- http://localhost:${PORT}/health && echo ' - Healthy'" 2>/dev/null; then
-              echo "✓ GREEN pod health check passed"
-              exit 0
-            fi
-            sleep 5
+          # Loop through each pod
+          for POD in $PODS; do
+            echo "Checking pod: $POD"
+
+            # Get container port dynamically (assumes single container per pod)
+            PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+            echo "Detected container port: $PORT"
+
+            # Retry health check up to 24 times with 5s interval (total 2 minutes)
+            for i in $(seq 1 24); do
+              echo "Health check attempt $i/24 on port $PORT..."
+              if kubectl exec -n $NAMESPACE $POD -- sh -c "curl -sSf http://localhost:${PORT}/health" >/dev/null 2>&1; then
+                echo "✓ Pod $POD passed health check"
+                break
+              fi
+
+              if [ "$i" -eq 24 ]; then
+                echo "ERROR: Pod $POD failed health check after 2 minutes"
+                kubectl logs -n $NAMESPACE $POD
+                exit 1
+              fi
+              sleep 5
+            done
           done
 
-          echo "ERROR: GREEN pod health check failed after 2 minutes"
-          exit 1
+          echo "✓ All GREEN pods passed health check"
+
 
       # --------------------------
       # FLIP SERVICE TO GREEN
