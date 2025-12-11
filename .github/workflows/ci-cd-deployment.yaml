@@ -134,6 +134,19 @@ jobs:
           sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client
 
+      # Install AWS EKS IAM Authenticator
+      - name: Install AWS EKS IAM Authenticator
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y awscli
+
+          curl -o aws-iam-authenticator \
+            https://amazon-eks.s3.us-west-2.amazonaws.com/1.27.1/2023-04-19/bin/linux/amd64/aws-iam-authenticator
+
+          chmod +x aws-iam-authenticator
+          sudo mv aws-iam-authenticator /usr/local/bin/
+          aws-iam-authenticator version
+
       # --------------------------
       # SETUP CLUSTER (bg-eks)
       # --------------------------
@@ -146,24 +159,20 @@ jobs:
         run: |
           echo "Generating kubeconfig for cluster: $CLUSTER_NAME in region: $AWS_REGION"
 
-          # Generate kubeconfig
           aws eks update-kubeconfig \
             --name "$CLUSTER_NAME" \
             --region "$AWS_REGION" \
             --kubeconfig "$HOME/kubeconfig"
 
-          # Export kubeconfig path
           echo "KUBECONFIG=$HOME/kubeconfig" >> $GITHUB_ENV
 
-          echo "Kubeconfig generated. Setting current context..."
-
-          # Set the current context manually (important!)
           CONTEXT_NAME=$(kubectl config get-contexts -o name --kubeconfig=$HOME/kubeconfig)
           kubectl config use-context "$CONTEXT_NAME" --kubeconfig=$HOME/kubeconfig
 
-          # Verify kubeconfig
-          echo "=== Kubeconfig created and context set ==="
-          kubectl config current-context --kubeconfig=$HOME/kubeconfig
+          echo "Testing AWS token..."
+          aws eks get-token --cluster-name "$CLUSTER_NAME" --region "$AWS_REGION" > /dev/null
+
+          echo "Kubeconfig and authentication ready."
 
       - name: Verify cluster connection
         run: |
