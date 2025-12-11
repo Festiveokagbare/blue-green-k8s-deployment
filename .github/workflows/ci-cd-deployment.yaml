@@ -303,7 +303,6 @@ jobs:
 
           echo "✓ GREEN environment is healthy"
 
-
       # --------------------------
       # FLIP SERVICE TO GREEN
       # --------------------------
