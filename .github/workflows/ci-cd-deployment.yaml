@@ -291,11 +291,11 @@ jobs:
       - name: Smoke test GREEN pod
         id: smoketest
         run: |
-         echo "Starting robust smoke test for GREEN pods..."
+          echo "Starting robust smoke test for GREEN pods..."
 
-         # Wait for at least one pod to be Ready
-         POD=""
-         for i in {1..24}; do  # check every 5s, up to 2 min
+          # Wait for at least one pod to be Ready
+          POD=""
+          for i in {1..24}; do  # check every 5s, up to 2 min
             POD=$(kubectl get pods -n $NAMESPACE \
               -l app=$APP_NAME,version=$GREEN_LABEL \
               -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || true)
@@ -314,23 +314,22 @@ jobs:
             exit 1
           fi
 
-    # Dynamically detect container port
-    PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo "5000")
-    echo "Detected container port: $PORT"
+          # Dynamically detect container port
+          PORT=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo "5000")
+          echo "Detected container port: $PORT"
 
-    # Retry health check until success
-    for i in {1..24}; do  # retry every 5s, up to 2 min
-      echo "Health check attempt $i/24 on port $PORT..."
-      if kubectl exec -n $NAMESPACE $POD -- sh -c "wget -qO- http://localhost:${PORT}/health && echo ' - Healthy'" 2>/dev/null; then
-        echo "✓ GREEN pod health check passed"
-        exit 0
-      fi
-      sleep 5
-    done
+          # Retry health check until success
+          for i in {1..24}; do  # retry every 5s, up to 2 min
+            echo "Health check attempt $i/24 on port $PORT..."
+            if kubectl exec -n $NAMESPACE $POD -- sh -c "wget -qO- http://localhost:${PORT}/health && echo ' - Healthy'" 2>/dev/null; then
+              echo "✓ GREEN pod health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
 
-    echo "ERROR: GREEN pod health check failed after 2 minutes"
-    exit 1
-
+          echo "ERROR: GREEN pod health check failed after 2 minutes"
+          exit 1
 
       # --------------------------
       # FLIP SERVICE TO GREEN
