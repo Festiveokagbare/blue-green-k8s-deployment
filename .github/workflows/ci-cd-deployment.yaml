@@ -165,12 +165,12 @@ jobs:
           echo "=== Kubeconfig created and context set ==="
           kubectl config current-context --kubeconfig=$HOME/kubeconfig
 
-            - name: Verify cluster connection
-              run: |
-                echo "Testing connection to cluster..."
-                kubectl cluster-info
-                kubectl get nodes
-                echo "✓ Cluster connection successful"
+      - name: Verify cluster connection
+        run: |
+          echo "Testing connection to cluster..."
+          kubectl cluster-info
+          kubectl get nodes
+          echo "✓ Cluster connection successful"
 
       # --------------------------
       # PREPARE NAMESPACE AND CHECK EXISTING DEPLOYMENTS
