@@ -6,3 +6,5 @@ infra/.terraform/
 *.log
 .terraform.lock.hcl
 aws-auth.yaml
+infra/kubeconfig.b64
+infra/kubeconfig-ci

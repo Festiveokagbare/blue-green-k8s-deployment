@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-green
+  namespace: blue-green-app
+spec:
+  type: ClusterIP
+  selector:
+    app: blue-green-app
+    version: green
+  ports:
+    - port: 5000
+      targetPort: 5000
